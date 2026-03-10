@@ -1,0 +1,31 @@
+server:
+  port: 8080
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+aws:
+  region: sa-east-1
+  dynamodb:
+    table-name: catalog_products
+    sku-index-name: sku-index
+    cart-table-name: cart_items
+    inventory-table-name: inventory_items
+    inventory-reservation-table-name: inventory_reservations
+    order-table-name: orders
+    payment-table-name: payments
+
+app:
+  seed-enabled: false
