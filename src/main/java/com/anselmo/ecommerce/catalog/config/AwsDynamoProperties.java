@@ -17,5 +17,10 @@ public class AwsDynamoProperties {
     public static class Dynamo {
         private String tableName;
         private String skuIndexName;
+        private String cartTableName;
+        private String inventoryTableName;
+        private String inventoryReservationTableName;
+        private String orderTableName;
+        private String paymentTableName;
     }
 }
