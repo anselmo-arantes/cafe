@@ -231,3 +231,15 @@ aws dynamodb create-table \
 
 ## Seed opcional
 Se `app.seed-enabled=true`, o serviço tenta inserir automaticamente o produto padrão da cafeteira portátil ao iniciar, caso o SKU ainda não exista.
+
+## Migração para microserviços independentes (plano)
+
+Documentos de execução da migração incremental:
+- `docs/architecture/microservices-boundaries.md`
+- `docs/migration/repository-blueprint.md`
+- `docs/migration/data-ownership-and-persistence.md`
+- `docs/migration/extraction-roadmap.md`
+- `docs/platform/api-gateway-and-resilience.md`
+- `docs/cicd/contracts-and-pipelines.md`
+- `docs/migration/rollout-and-cutover.md`
+- `templates/service-blueprint/`
