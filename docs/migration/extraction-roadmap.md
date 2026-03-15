@@ -1,5 +1,15 @@
 # Extraction Roadmap (Service by Service)
 
+## Phase 0: Package Reorganization in Current Repository
+- Move domain packages out of `com.anselmo.ecommerce.catalog.<domain>` to independent roots:
+  - `com.anselmo.ecommerce.cart`
+  - `com.anselmo.ecommerce.inventory`
+  - `com.anselmo.ecommerce.order`
+  - `com.anselmo.ecommerce.payment`
+  - `com.anselmo.ecommerce.checkout`
+- Keep existing HTTP routes unchanged during this phase.
+- Update imports and tests to remove namespace coupling with `catalog`.
+
 ## Phase 1: Catalog Service (Anchor)
 - Create `ecommerce-catalog-service` repository from template.
 - Move catalog controllers/services/repositories.
