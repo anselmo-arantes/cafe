@@ -1,0 +1,17 @@
+.git
+.gitignore
+.github
+.idea
+.vscode
+
+**/target
+
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*.DS_Store
+
+/docs
+/templates
