@@ -232,6 +232,16 @@ aws dynamodb create-table \
 ## Seed opcional
 Se `app.seed-enabled=true`, o serviço tenta inserir automaticamente o produto padrão da cafeteira portátil ao iniciar, caso o SKU ainda não exista.
 
+
+## CI/CD para publicação no Amazon ECR
+- Workflow GitHub Actions: `.github/workflows/publish-ecr.yml`
+- Guia operacional de identidade federada GitHub ↔ AWS: `docs/cicd/github-aws-oidc.md`
+- Variáveis esperadas no GitHub Actions:
+  - `AWS_REGION=sa-east-1`
+  - `ECR_REPOSITORY=cafe`
+- Secret esperado no GitHub Actions:
+  - `AWS_ROLE_TO_ASSUME`
+
 ## Migração para microserviços independentes (plano)
 
 Documentos de execução da migração incremental:
