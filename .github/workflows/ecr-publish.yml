@@ -12,61 +12,48 @@ env:
 
 jobs:
   publish:
-    name: Build and publish Docker image
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-    env:
-      IMAGE_VERSION: ${{ github.run_number }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Build artifact with Maven
-        run: mvn -B clean package
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ECR_GITHUB_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Derive image metadata
+        id: meta
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}"
+
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+
       - name: Build Docker image
-        env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           docker build \
-            -t "$REGISTRY/$ECR_REPOSITORY:$IMAGE_VERSION" \
-            -t "$REGISTRY/$ECR_REPOSITORY:latest" \
+            -t "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.short_sha }}" \
+            -t "${{ steps.meta.outputs.image_uri }}:latest" \
             .
 
-      - name: Push Docker image
-        env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      - name: Push Docker image tags
         run: |
-          docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_VERSION"
-          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+          docker push "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.short_sha }}"
+          docker push "${{ steps.meta.outputs.image_uri }}:latest"
 
-      - name: Publish workflow summary
-        env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      - name: Summarize tagging policy
         run: |
-          {
-            echo '## Amazon ECR publish summary'
-            echo
-            echo "- Version image: \`$REGISTRY/$ECR_REPOSITORY:$IMAGE_VERSION\`"
-            echo "- Latest image: \`$REGISTRY/$ECR_REPOSITORY:latest\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Imagem publicada: ${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.short_sha }}"
+          echo "Alias de conveniência: ${{ steps.meta.outputs.image_uri }}:latest"
+          echo "Deploy estável e rollback devem reutilizar a tag SHA, sem rebuild."
