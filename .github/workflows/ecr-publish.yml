@@ -1,0 +1,73 @@
+name: Publish image to Amazon ECR
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: sa-east-1
+  ECR_REPOSITORY: cafe
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build application
+        run: mvn -B -ntp clean package -DskipTests
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Derive image metadata
+        id: meta
+        run: |
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}"
+          IMAGE_TAG="${GITHUB_SHA}"
+
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}" \
+            -t "${{ steps.meta.outputs.image_uri }}:latest" \
+            .
+
+      - name: Push Docker image tags
+        run: |
+          docker push "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}"
+          docker push "${{ steps.meta.outputs.image_uri }}:latest"
+
+      - name: Summarize published image
+        run: |
+          {
+            echo "## Published image"
+            echo
+            echo "- Immutable tag: \`${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}\`"
+            echo "- Convenience tag: \`${{ steps.meta.outputs.image_uri }}:latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"

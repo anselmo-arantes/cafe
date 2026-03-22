@@ -166,6 +166,65 @@ curl -X POST http://localhost:8080/api/v1/payments/webhook \
   }'
 ```
 
+## Imagens Docker no Amazon ECR
+
+### Repositório e URI esperada
+O repositório ECR deste serviço deve ser `cafe`, com URI no formato:
+
+```text
+<account-id>.dkr.ecr.sa-east-1.amazonaws.com/cafe:<tag>
+```
+
+Com a estratégia atual de versionamento, a imagem publicada segue este padrão:
+
+```text
+<account-id>.dkr.ecr.sa-east-1.amazonaws.com/cafe:<numero_incremental>
+<account-id>.dkr.ecr.sa-east-1.amazonaws.com/cafe:latest
+```
+
+### Nova estratégia de versionamento
+A estratégia de versionamento adotada para publicação no ECR usa `github.run_number` como versão numérica incremental.
+
+Toda publicação da imagem deve gerar **duas tags** para o mesmo artefato:
+- `numero_incremental`, derivado de `github.run_number`, com valor inteiro crescente a cada execução do workflow.
+- `latest`, apenas como alias de conveniência para validações rápidas e uso manual.
+
+Motivos para essa escolha:
+- gera um número simples de ler e comunicar operacionalmente;
+- facilita o rastreamento no histórico do GitHub Actions;
+- substitui a necessidade de usar `${{ github.sha }}` como identificador principal da versão publicada.
+
+Diretriz operacional:
+- Ambientes estáveis (`staging` validado, `production` e rollback) devem referenciar sempre a tag numérica incremental.
+- A tag `latest` não deve ser a referência oficial de deploy em ambientes estáveis.
+- A rastreabilidade deve ser feita correlacionando o `github.run_number` da imagem com a execução correspondente do GitHub Actions.
+
+### Uso recomendado por ambiente
+- **Desenvolvimento / validação rápida:** pode usar `latest` para inspeção manual e smoke tests informais.
+- **Ambientes estáveis:** usar somente `cafe:<numero_incremental>`.
+- **Auditoria e investigação:** localizar a imagem pelo número incremental e correlacionar com a execução do pipeline no GitHub Actions.
+
+### Procedimento de rollback
+Quando for necessário reverter uma entrega:
+1. Identifique a última tag numérica conhecida como estável no ECR ou no histórico de deploys.
+2. Atualize o manifesto, variável de ambiente ou parâmetro de deploy para reapontar a aplicação para `cafe:<numero_incremental_anterior>`.
+3. Execute o deploy reutilizando a mesma imagem já publicada, sem rebuild.
+4. Valide saúde, smoke tests e logs após a reversão.
+
+Exemplo:
+```text
+<account-id>.dkr.ecr.sa-east-1.amazonaws.com/cafe:152
+```
+
+Se a versão atual falhar e `152` for a última release estável, o rollback deve reaproveitar exatamente essa tag numérica anterior.
+
+### Evolução futura do repositório ECR
+Se no futuro o repositório `cafe` passar a hospedar mais de um serviço, evitar colisões operacionais passa a ser obrigatório. Nesse cenário, adotar uma destas estratégias:
+- migrar para um repositório por serviço; ou
+- padronizar tags com prefixo de serviço, como `catalog-152`, `inventory-152` e `checkout-152`.
+
+Enquanto houver apenas um serviço por repositório, a convenção `cafe:<numero_incremental>` + `cafe:latest` é suficiente.
+
 ## Configuração DynamoDB
 
 ### Tabela
