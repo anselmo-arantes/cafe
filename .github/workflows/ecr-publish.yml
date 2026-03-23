@@ -36,7 +36,7 @@ jobs:
           APP_VERSION=$(mvn -B -q -ntp help:evaluate -Dexpression=project.version -DforceStdout)
           NORMALIZED_APP_VERSION=$(echo "${APP_VERSION}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9._-' '-')
           IMAGE_TAG="${LAMBDA_IMAGE_TAG_PREFIX}-${NORMALIZED_APP_VERSION}"
-          IMAGE_LATEST_TAG="${LAMBDA_IMAGE_TAG_PREFIX}-latest"
+          IMAGE_LATEST_TAG="${LAMBDA_IMAGE_TAG_PREFIX}-HK"
 
           echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
           echo "normalized_app_version=${NORMALIZED_APP_VERSION}" >> "$GITHUB_OUTPUT"
