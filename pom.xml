@@ -12,7 +12,7 @@
 
     <groupId>com.anselmo.ecommerce</groupId>
     <artifactId>cafe</artifactId>
-    <version>0.0.2</version>
+    <version>0.0.3</version>
     <name>cafe</name>
     <description>API microservice for MVP ecommerce</description>
          
