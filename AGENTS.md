@@ -56,6 +56,7 @@ Cada domínio deve ter **repositório e pacote raiz próprios**:
 
 ## 5) Convenções de código
 - Nomes claros e descritivos.
+- A cada novo PR, incrementar `project.version` no `pom.xml` antes de publicar ou versionar artefatos/imagens.
 - Controllers finos, regras no service.
 - Repository abstrai acesso ao DynamoDB.
 - DTOs separados por caso de uso.
