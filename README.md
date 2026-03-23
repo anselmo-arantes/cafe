@@ -15,13 +15,34 @@ Microserviço de catálogo para o e-commerce MVP da **cafeteira portátil**, con
 ### Pré-requisitos
 - Java 21
 - Maven 3.9+
+- Docker (para build e execução por container)
 - AWS credentials configuradas via provider chain padrão (`~/.aws/credentials`, env vars, role etc.)
 - Tabela DynamoDB existente
 
-### Rodar localmente
+### Rodar localmente com Maven
 ```bash
 mvn spring-boot:run
 ```
+
+### Rodar localmente com container comum
+A mesma imagem continua inicializando o Spring Boot com `java -jar /app/app.jar`, mas agora já inclui a extensão do AWS Lambda Web Adapter em `/opt/extensions/lambda-adapter`.
+
+```bash
+docker build -t cafe:local .
+docker run --rm -p 8080:8080 cafe:local
+```
+
+### Executar no AWS Lambda via container image
+A imagem foi preparada para o modelo de container image do AWS Lambda, mantendo o servidor HTTP interno do Spring Boot na porta `8080`.
+
+Configurações relevantes na imagem final:
+- `SERVER_PORT=8080`
+- `PORT=8080`
+- `AWS_LWA_PORT=8080`
+- `AWS_LWA_READINESS_CHECK_PORT=8080`
+- `AWS_LWA_READINESS_CHECK_PATH=/actuator/health`
+
+Isso permite que o Lambda Web Adapter encaminhe as requisições para a aplicação Spring Boot sem alterar controllers, services ou o artefato `jar` gerado pelo build Maven.
 
 ### Rodar testes
 ```bash
@@ -175,55 +196,72 @@ O repositório ECR deste serviço deve ser `cafe`, com URI no formato:
 <account-id>.dkr.ecr.sa-east-1.amazonaws.com/cafe:<tag>
 ```
 
-Com a estratégia atual de versionamento, a imagem publicada segue este padrão:
+### Estratégia de versionamento para a imagem Lambda
+Para permitir rollback simples sem sobrescrever a linha atual de imagens, a publicação da variante preparada para AWS Lambda usa um namespace próprio de tags.
+
+Toda publicação da imagem Lambda deve gerar **duas tags** para o mesmo artefato:
+- `lambda-<versao-do-pom>`, derivada de `project.version` do `pom.xml`.
+- `lambda-latest`, apenas como alias de conveniência para validações rápidas.
+
+Exemplo:
 
 ```text
-<account-id>.dkr.ecr.sa-east-1.amazonaws.com/cafe:<numero_incremental>
-<account-id>.dkr.ecr.sa-east-1.amazonaws.com/cafe:latest
+<account-id>.dkr.ecr.sa-east-1.amazonaws.com/cafe:lambda-0.0.2-snapshot
+<account-id>.dkr.ecr.sa-east-1.amazonaws.com/cafe:lambda-latest
 ```
 
-### Nova estratégia de versionamento
-A estratégia de versionamento adotada para publicação no ECR usa `github.run_number` como versão numérica incremental.
-
-Toda publicação da imagem deve gerar **duas tags** para o mesmo artefato:
-- `numero_incremental`, derivado de `github.run_number`, com valor inteiro crescente a cada execução do workflow.
-- `latest`, apenas como alias de conveniência para validações rápidas e uso manual.
-
 Motivos para essa escolha:
-- gera um número simples de ler e comunicar operacionalmente;
-- facilita o rastreamento no histórico do GitHub Actions;
-- substitui a necessidade de usar `${{ github.sha }}` como identificador principal da versão publicada.
+- preserva a trilha atual de tags não-Lambda já existente;
+- facilita rollback entre variantes sem colisão com `latest` e tags antigas;
+- mantém rastreabilidade simples correlacionando a versão do `pom.xml` com o GitHub Actions e o artefato publicado.
 
 Diretriz operacional:
-- Ambientes estáveis (`staging` validado, `production` e rollback) devem referenciar sempre a tag numérica incremental.
-- A tag `latest` não deve ser a referência oficial de deploy em ambientes estáveis.
-- A rastreabilidade deve ser feita correlacionando o `github.run_number` da imagem com a execução correspondente do GitHub Actions.
+- Ambientes estáveis em Lambda devem referenciar sempre `cafe:lambda-<versao-do-pom>`.
+- A tag `lambda-latest` não deve ser a referência oficial de deploy em ambientes estáveis.
+- A rastreabilidade deve ser feita correlacionando `project.version` do `pom.xml` com a execução correspondente do workflow.
 
-### Uso recomendado por ambiente
-- **Desenvolvimento / validação rápida:** pode usar `latest` para inspeção manual e smoke tests informais.
-- **Ambientes estáveis:** usar somente `cafe:<numero_incremental>`.
-- **Auditoria e investigação:** localizar a imagem pelo número incremental e correlacionar com a execução do pipeline no GitHub Actions.
+### Publicação no ECR
+O workflow `.github/workflows/ecr-publish.yml` foi ajustado para ler `project.version` diretamente do `pom.xml`, construir a imagem compatível com Lambda e publicar as tags `lambda-<versao-do-pom>` e `lambda-latest` no mesmo repositório ECR.
+
+Se for necessário publicar manualmente, um fluxo equivalente é:
+
+```bash
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AWS_REGION=sa-east-1
+IMAGE_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cafe"
+IMAGE_TAG="lambda-<versao-do-pom-em-lowercase>"
+
+aws ecr get-login-password --region "${AWS_REGION}" \
+  | docker login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+docker build -t "${IMAGE_URI}:${IMAGE_TAG}" -t "${IMAGE_URI}:lambda-latest" .
+docker push "${IMAGE_URI}:${IMAGE_TAG}"
+docker push "${IMAGE_URI}:lambda-latest"
+```
 
 ### Procedimento de rollback
-Quando for necessário reverter uma entrega:
-1. Identifique a última tag numérica conhecida como estável no ECR ou no histórico de deploys.
-2. Atualize o manifesto, variável de ambiente ou parâmetro de deploy para reapontar a aplicação para `cafe:<numero_incremental_anterior>`.
+Quando for necessário reverter uma entrega Lambda:
+1. Identifique a última tag `lambda-<versao-do-pom>` conhecida como estável no ECR ou no histórico de deploys.
+2. Atualize o manifesto, variável de ambiente ou parâmetro de deploy para reapontar a aplicação para `cafe:lambda-<versao-do-pom-anterior>`.
 3. Execute o deploy reutilizando a mesma imagem já publicada, sem rebuild.
 4. Valide saúde, smoke tests e logs após a reversão.
 
 Exemplo:
 ```text
-<account-id>.dkr.ecr.sa-east-1.amazonaws.com/cafe:152
+<account-id>.dkr.ecr.sa-east-1.amazonaws.com/cafe:lambda-0.0.1-snapshot
 ```
 
-Se a versão atual falhar e `152` for a última release estável, o rollback deve reaproveitar exatamente essa tag numérica anterior.
+Se a versão atual falhar e `lambda-0.0.1-snapshot` for a última release estável, o rollback deve reaproveitar exatamente essa tag versionada anterior.
+
+### Regra de versionamento do `pom.xml`
+Cada novo PR deve incrementar `project.version` no `pom.xml` antes da publicação da imagem. A tag imutável da imagem Lambda passa a refletir essa versão normalizada em lowercase, por exemplo `0.0.2-SNAPSHOT` -> `lambda-0.0.2-snapshot`.
 
 ### Evolução futura do repositório ECR
 Se no futuro o repositório `cafe` passar a hospedar mais de um serviço, evitar colisões operacionais passa a ser obrigatório. Nesse cenário, adotar uma destas estratégias:
 - migrar para um repositório por serviço; ou
 - padronizar tags com prefixo de serviço, como `catalog-152`, `inventory-152` e `checkout-152`.
 
-Enquanto houver apenas um serviço por repositório, a convenção `cafe:<numero_incremental>` + `cafe:latest` é suficiente.
+Enquanto houver apenas um serviço por repositório, pode-se manter a convenção legada para imagens comuns e a convenção `cafe:lambda-<versao-do-pom>` + `cafe:lambda-latest` para a variante de AWS Lambda.
 
 ## Configuração DynamoDB
 
