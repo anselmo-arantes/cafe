@@ -13,6 +13,7 @@ permissions:
 env:
   AWS_REGION: sa-east-1
   ECR_REPOSITORY: cafe
+  LAMBDA_IMAGE_TAG_PREFIX: lambda
 
 jobs:
   publish:
@@ -28,6 +29,19 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+
+      - name: Resolve application version from pom.xml
+        id: app-version
+        run: |
+          APP_VERSION=$(mvn -B -q -ntp help:evaluate -Dexpression=project.version -DforceStdout)
+          NORMALIZED_APP_VERSION=$(echo "${APP_VERSION}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9._-' '-')
+          IMAGE_TAG="${LAMBDA_IMAGE_TAG_PREFIX}-${NORMALIZED_APP_VERSION}"
+          IMAGE_LATEST_TAG="${LAMBDA_IMAGE_TAG_PREFIX}-latest"
+
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "normalized_app_version=${NORMALIZED_APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_latest_tag=${IMAGE_LATEST_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Build application
         run: mvn -B -ntp clean package -DskipTests
@@ -46,28 +60,30 @@ jobs:
         id: meta
         run: |
           IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}"
-          IMAGE_TAG="${GITHUB_SHA}"
 
           echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
-          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${{ steps.app-version.outputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          echo "image_latest_tag=${{ steps.app-version.outputs.image_latest_tag }}" >> "$GITHUB_OUTPUT"
 
       - name: Build Docker image
         run: |
           docker build \
             -t "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}" \
-            -t "${{ steps.meta.outputs.image_uri }}:latest" \
+            -t "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_latest_tag }}" \
             .
 
       - name: Push Docker image tags
         run: |
           docker push "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}"
-          docker push "${{ steps.meta.outputs.image_uri }}:latest"
+          docker push "${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_latest_tag }}"
 
       - name: Summarize published image
         run: |
           {
-            echo "## Published image"
+            echo "## Published Lambda-compatible image"
             echo
+            echo "- Application version from pom.xml: \`${{ steps.app-version.outputs.app_version }}\`"
             echo "- Immutable tag: \`${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}\`"
-            echo "- Convenience tag: \`${{ steps.meta.outputs.image_uri }}:latest\`"
+            echo "- Convenience tag: \`${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_latest_tag }}\`"
+            echo "- Rollback note: the existing non-Lambda tags remain untouched."
           } >> "$GITHUB_STEP_SUMMARY"
